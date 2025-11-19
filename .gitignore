@@ -1,0 +1,11 @@
+*
+!*.ioc
+!Core/
+!FATFS/
+!MIDWARE/
+!Middlewares/
+!Core/**
+!FATFS/**
+!MIDWARE/**
+!Middlewares/**
+!.gitignore
