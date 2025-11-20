@@ -67,6 +67,7 @@ volatile uint8_t micFullDataReady = 0;
 uint32_t fft_count = 0;
 float signal_input[N_SAMPLES + 2];
 float magnitude[N_SAMPLES/2];
+static float data[2048 + 2];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -84,6 +85,7 @@ static void SD_SaveFFT(const char *filename);
 static void MX_LPUART1_UART_Init(void);
 int _write(int file, char *ptr, int len);
 void send_uart(const char *msg);
+void NR_to_MATLAB_scale(float signal[], float mag[], uint32_t N);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -162,7 +164,7 @@ int main(void)
   //SD_ReadTextFile("nowey.txt");
   memset(signal_input, 0, sizeof(signal_input));
   fft_count = 0;
-  SD_LoadFFT_4096("nowey.txt");
+  SD_LoadFFT_4096("zniszczoney_v4.txt");
   compute_fft_and_print();
 
   while (1)
@@ -482,20 +484,21 @@ static void SD_SaveFFT(const char *filename)
     FRESULT res;
     UINT written;
     char buf[64];
+    send_uart("Entering SD_SaveFFT...\r\n");
 
     if (disk_initialize(0) != 0) {
-        printf("disk init failed!\r\n");
+    	send_uart("disk init failed!\r\n");
         return;
     }
 
     if (f_mount(&FatFs, "", 1) != FR_OK) {
-        printf("mount failed!\r\n");
+    	send_uart("mount failed!\r\n");
         return;
     }
 
     res = f_open(&fil, filename, FA_WRITE | FA_CREATE_ALWAYS);
     if (res != FR_OK) {
-        printf("open failed (%d)\r\n", res);
+    	send_uart("open failed (%d)\r\n");
         return;
     }
 
@@ -511,37 +514,76 @@ static void SD_SaveFFT(const char *filename)
     printf("FFT saved to %s\r\n", filename);
 }
 
+void compute_magnitude(float signal[], float mag[], uint32_t N)
+{
+	float scale = 1.0f / (float)N;
+
+	    // DC bin (k = 0), no factor 2
+	    mag[0] = fabsf(signal[0]) * scale;
+
+	    // Bins 1 .. N/2 - 1 : multiply by 2 for single-sided spectrum
+	    for (uint32_t k = 1; k < N/2; k++)
+	    {
+	        float re = signal[2*k];
+	        float im = signal[2*k + 1];
+	        float m = sqrtf(re*re + im*im);
+	        mag[k] = 2.0f * m * scale;
+	    }
+
+}
+
+static void SD_SaveFullFFT(const char *filename, float *data, uint32_t N)
+{
+    FATFS FatFs;
+    FIL fil;
+    FRESULT res;
+    UINT written;
+    char buf[48];
+
+    send_uart("Saving full FFT array...\r\n");
+
+    if (disk_initialize(0) != 0) {
+        send_uart("disk init failed!\r\n");
+        return;
+    }
+
+    if (f_mount(&FatFs, "", 1) != FR_OK) {
+        send_uart("mount failed!\r\n");
+        return;
+    }
+
+    res = f_open(&fil, filename, FA_CREATE_ALWAYS | FA_WRITE);
+    if (res != FR_OK) {
+        send_uart("open failed!\r\n");
+        return;
+    }
+
+    for (uint32_t i = 0; i < N + 2; i++)
+    {
+        // save index and value
+        int len = snprintf(buf, sizeof(buf), "%lu, %.7f\r\n",
+                           (unsigned long)i, signal_input[i]);
+        f_write(&fil, buf, len, &written);
+    }
+
+    f_close(&fil);
+    f_mount(NULL, "", 0);
+
+    send_uart("Full FFT array saved.\r\n");
+}
+
 void compute_fft_and_print(void)
 {
     char msg[128];
 
-    // Run FFT
-    signal_input[N_SAMPLES]   = 0.0f;
-    signal_input[N_SAMPLES+1] = 0.0f;
-    float mean = 0.0f;
-    for (int i = 0; i < N_SAMPLES; i++) mean += signal_input[i];
-    mean /= N_SAMPLES;
-
-    for (int i = 0; i < N_SAMPLES; i++) signal_input[i] -= mean;
-
-    for (int i = 0; i < N_SAMPLES; i++)
-        signal_input[i] *= 0.54f - 0.46f * cosf(2.0f * M_PI * i / (N_SAMPLES - 1));
-
+//    for (int i = 0; i < N_SAMPLES; i++)
+//        data[i+1] = signal_input[i];
 
     realft(signal_input, N_SAMPLES, 1);
-
-    // Magnitude
     for (int k = 1; k < N_SAMPLES/2; k++) {
         float re = signal_input[2*k];
         float im = signal_input[2*k + 1];
         magnitude[k] = sqrtf(re*re + im*im);
-    }
-
-    float scale = 2.0f / N_SAMPLES;
-
-    // Scale bins 1..N/2−1 (MATLAB does the same)
-    for (int k = 1; k < N_SAMPLES/2; k++) {
-        magnitude[k] *= scale;
     }
 
     // Peaks
@@ -560,22 +602,25 @@ void compute_fft_and_print(void)
             max2 = magnitude[k]; idx2 = k;
         }
     }
+    // Normalize so the largest peak = 1
+    if (max1 > 0.0f) {
+        for (int k = 0; k < N_SAMPLES/2; k++) {
+            magnitude[k] /= max1;
+        }
+    }
 
     float freq1 = ((float)FS / (float)N_SAMPLES) * idx1;
     float freq2 = ((float)FS / (float)N_SAMPLES) * idx2;
-    char dbg_idx[64];
-    snprintf(dbg_idx, sizeof(dbg_idx),
-             "DEBUG idx1=%d idx2=%d max1=%f max2=%f\r\n",
-             idx1, idx2, max1, max2);
-    send_uart(dbg_idx);
+
     snprintf(msg, sizeof(msg),
         "Peak1: %.1f Hz (%.3f)\r\nPeak2: %.1f Hz (%.3f)\r\n",
-        freq1, max1, freq2, max2
+        freq1, max1/max1, freq2, max2/max1
     );
     send_uart(msg);
 
     // Save FFT to SD
-    SD_SaveFFT("fft_output.txt");
+    SD_SaveFFT("fft_output_3.txt");
+    SD_SaveFullFFT("fft_full_raw.txt", signal_input, N_SAMPLES);
 }
 
 
