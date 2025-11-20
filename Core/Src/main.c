@@ -22,9 +22,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "fft.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,6 +37,9 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define MIC_BUF_LEN 512
+#define N_SAMPLES 2048
+#define FFT_SAMPLES 2048
+#define FS 1000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -45,6 +50,8 @@
 /* Private variables ---------------------------------------------------------*/
 
 COM_InitTypeDef BspCOMInit;
+I2C_HandleTypeDef hi2c1;
+
 I2S_HandleTypeDef hi2s2;
 DMA_HandleTypeDef hdma_spi2_rx;
 
@@ -57,6 +64,9 @@ int toReceive = 0;
 int32_t micBuffer[MIC_BUF_LEN];
 volatile uint8_t micHalfDataReady = 0;
 volatile uint8_t micFullDataReady = 0;
+uint32_t fft_count = 0;
+float signal_input[N_SAMPLES + 2];
+float magnitude[N_SAMPLES/2];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -65,9 +75,13 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_I2S2_Init(void);
 static void MX_SPI3_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
-static void SD_Card_Test(void);
-static void MX_LPUART1_UART_Init(void);;
+
+void compute_fft_and_print(void);
+static void SD_LoadFFT_4096(const char *filename);
+static void SD_SaveFFT(const char *filename);
+static void MX_LPUART1_UART_Init(void);
 int _write(int file, char *ptr, int len);
 void send_uart(const char *msg);
 /* USER CODE END PFP */
@@ -119,6 +133,7 @@ int main(void)
   if (MX_FATFS_Init() != APP_OK) {
     Error_Handler();
   }
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   MX_LPUART1_UART_Init();
   /* USER CODE END 2 */
@@ -143,7 +158,12 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   HAL_I2S_Receive_DMA(&hi2s2, (uint16_t*)micBuffer, MIC_BUF_LEN);
-  SD_Card_Test();
+  //SD_Card_Test();
+  //SD_ReadTextFile("nowey.txt");
+  memset(signal_input, 0, sizeof(signal_input));
+  fft_count = 0;
+  SD_LoadFFT_4096("nowey.txt");
+  compute_fft_and_print();
 
   while (1)
   {
@@ -209,6 +229,54 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.Timing = 0x40B285C2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
@@ -356,119 +424,161 @@ static void MX_LPUART1_UART_Init(void)
     }
 }
 
-static void SD_Card_Test(void)
+static void SD_LoadFFT_4096(const char *filename)
 {
-  FATFS FatFs;
-  FIL Fil;
-  FRESULT FR_Status;
-  FATFS *FS_Ptr;
-  UINT RWC, WWC; // Read/Write Word Counter
-  DWORD FreeClusters;
-  uint32_t TotalSize, FreeSpace;
-  char RW_Buffer[200];
-  do
-  {
-    //------------------[ Mount The SD Card ]--------------------
-	  if (disk_initialize(0) != 0) {
-	      send_uart("Low-level SPI disk initialization failed!\r\n");
-	  }
-    FR_Status = f_mount(&FatFs, "", 1);
-    if (FR_Status != FR_OK)
-    {
-      sprintf(TxBuffer, "Error! While Mounting SD Card, Error Code: (%i)\r\n", FR_Status);
-      printf("%s", TxBuffer);
-      break;
-    }
-    sprintf(TxBuffer, "SD Card Mounted Successfully! \r\n\n");
-    printf("%s", TxBuffer);
-    //------------------[ Get & Print The SD Card Size & Free Space ]--------------------
-    f_getfree("", &FreeClusters, &FS_Ptr);
-    TotalSize = (uint32_t)((FS_Ptr->n_fatent - 2) * FS_Ptr->csize * 0.5);
-    FreeSpace = (uint32_t)(FreeClusters * FS_Ptr->csize * 0.5);
-    sprintf(TxBuffer, "Total SD Card Size: %lu Bytes\r\n", TotalSize);
-    printf("%s", TxBuffer);
-    sprintf(TxBuffer, "Free SD Card Space: %lu Bytes\r\n\n", FreeSpace);
-    printf("%s", TxBuffer);
-    //------------------[ Open A Text File For Write & Write Data ]--------------------
-    //Open the file
-    FR_Status = f_open(&Fil, "TextFileWrite.txt", FA_WRITE | FA_READ | FA_CREATE_ALWAYS);
-    if(FR_Status != FR_OK)
-    {
-      sprintf(TxBuffer, "Error! While Creating/Opening A New Text File, Error Code: (%i)\r\n", FR_Status);
-      printf("%s", TxBuffer);
-      break;
-    }
-    sprintf(TxBuffer, "Text File Created & Opened! Writing Data To The Text File..\r\n\n");
-    printf("%s", TxBuffer);
-    // (1) Write Data To The Text File [ Using f_puts() Function ]
-    f_puts("Hello! From STM32 To SD Card Over SPI, Using f_puts()\n", &Fil);
-    // (2) Write Data To The Text File [ Using f_write() Function ]
-    strcpy(RW_Buffer, "Hello! From STM32 To SD Card Over SPI, Using f_write()\r\n");
-    f_write(&Fil, RW_Buffer, strlen(RW_Buffer), &WWC);
-    // Close The File
-    f_close(&Fil);
-    //------------------[ Open A Text File For Read & Read Its Data ]--------------------
-    // Open The File
-    FR_Status = f_open(&Fil, "TextFileWrite.txt", FA_READ);
-    if(FR_Status != FR_OK)
-    {
-      sprintf(TxBuffer, "Error! While Opening (TextFileWrite.txt) File For Read.. \r\n");
-      printf("%s", TxBuffer);
-      break;
-    }
-    // (1) Read The Text File's Data [ Using f_gets() Function ]
-    f_gets(RW_Buffer, sizeof(RW_Buffer), &Fil);
-    sprintf(TxBuffer, "Data Read From (TextFileWrite.txt) Using f_gets():%s", RW_Buffer);
-    printf("%s", TxBuffer);
-    // (2) Read The Text File's Data [ Using f_read() Function ]
-    f_read(&Fil, RW_Buffer, f_size(&Fil), &RWC);
-    sprintf(TxBuffer, "Data Read From (TextFileWrite.txt) Using f_read():%s", RW_Buffer);
-    printf("%s", TxBuffer);
-    // Close The File
-    f_close(&Fil);
-    sprintf(TxBuffer, "File Closed! \r\n\n");
-    printf("%s", TxBuffer);
-    //------------------[ Open An Existing Text File, Update Its Content, Read It Back ]--------------------
-    // (1) Open The Existing File For Write (Update)
-    FR_Status = f_open(&Fil, "TextFileWrite.txt", FA_OPEN_EXISTING | FA_WRITE);
-    FR_Status = f_lseek(&Fil, f_size(&Fil)); // Move The File Pointer To The EOF (End-Of-File)
-    if(FR_Status != FR_OK)
-    {
-      sprintf(TxBuffer, "Error! While Opening (TextFileWrite.txt) File For Update.. \r\n");
-      printf("%s", TxBuffer);
-      break;
-    }
-    // (2) Write New Line of Text Data To The File
-    FR_Status = f_puts("This New Line Was Added During Update!\r\n", &Fil);
-    f_close(&Fil);
-    memset(RW_Buffer,'\0',sizeof(RW_Buffer)); // Clear The Buffer
-    // (3) Read The Contents of The Text File After The Update
-    FR_Status = f_open(&Fil, "TextFileWrite.txt", FA_READ); // Open The File For Read
-    f_read(&Fil, RW_Buffer, f_size(&Fil), &RWC);
-    sprintf(TxBuffer, "Data Read From (TextFileWrite.txt) After Update:%s", RW_Buffer);
-    printf("%s", TxBuffer);
-    f_close(&Fil);
-    //------------------[ Delete The Text File ]--------------------
-    // Delete The File
-    /*
-    FR_Status = f_unlink(TextFileWrite.txt);
-    if (FR_Status != FR_OK){
-        sprintf(TxBuffer, "Error! While Deleting The (TextFileWrite.txt) File.. \r\n");
-        UART_Print(TxBuffer);
-    }
-    */
-  } while(0);
-  //------------------[ Test Complete! Unmount The SD Card ]--------------------
-  FR_Status = f_mount(NULL, "", 0);
-  if (FR_Status != FR_OK)
-  {
-      sprintf(TxBuffer, "Error! While Un-mounting SD Card, Error Code: (%i)\r\n", FR_Status);
-      printf("%s", TxBuffer);
-  } else{
-      sprintf(TxBuffer, "SD Card Un-mounted Successfully! \r\n");
-      printf("%s", TxBuffer);
-  }
+	FATFS fs;
+	    FIL fp;
+	    char line[128];
+
+	    fft_count = 0;
+
+	    // Mount card
+	    if (f_mount(&fs, "", 1) != FR_OK) {
+	        send_uart("mount failed\r\n");
+	        return;
+	    }
+
+	    // Open file
+	    if (f_open(&fp, filename, FA_READ) != FR_OK) {
+	        send_uart("open failed\r\n");
+	        return;
+	    }
+
+	    send_uart("Reading FIRST 2048 samples...\r\n");
+
+	    // Read FIRST 2048 rows
+	    while (fft_count < FFT_SAMPLES && f_gets(line, sizeof(line), &fp))
+	    {
+	        // Find comma → keep only first column
+	        char *comma = strchr(line, ',');
+	        if (comma) *comma = '\0';
+
+	        // Convert to float
+	        float value = atof(line);
+	        signal_input[fft_count++] = value;
+
+	        // Debug print each sample
+	        char dbg[64];
+	        snprintf(dbg, sizeof(dbg),
+	                 "sample[%lu] = %f\r\n",
+	                 (unsigned long)(fft_count - 1), value);
+	        send_uart(dbg);
+	    }
+
+	    f_close(&fp);
+	    f_mount(NULL, "", 0);
+
+	    char msg[64];
+	    snprintf(msg, sizeof(msg),
+	             "Loaded %lu samples.\r\n",
+	             (unsigned long)fft_count);
+	    send_uart(msg);
 }
+
+static void SD_SaveFFT(const char *filename)
+{
+    FATFS FatFs;
+    FIL fil;
+    FRESULT res;
+    UINT written;
+    char buf[64];
+
+    if (disk_initialize(0) != 0) {
+        printf("disk init failed!\r\n");
+        return;
+    }
+
+    if (f_mount(&FatFs, "", 1) != FR_OK) {
+        printf("mount failed!\r\n");
+        return;
+    }
+
+    res = f_open(&fil, filename, FA_WRITE | FA_CREATE_ALWAYS);
+    if (res != FR_OK) {
+        printf("open failed (%d)\r\n", res);
+        return;
+    }
+
+    for (int k = 0; k < N_SAMPLES/2; k++) {
+        float freq = (FS / (float)N_SAMPLES) * k;
+        snprintf(buf, sizeof(buf), "%.4f, %.6f\r\n", freq, magnitude[k]);
+        f_write(&fil, buf, strlen(buf), &written);
+    }
+
+    f_close(&fil);
+    f_mount(NULL, "", 0);
+
+    printf("FFT saved to %s\r\n", filename);
+}
+
+void compute_fft_and_print(void)
+{
+    char msg[128];
+
+    // Run FFT
+    signal_input[N_SAMPLES]   = 0.0f;
+    signal_input[N_SAMPLES+1] = 0.0f;
+    float mean = 0.0f;
+    for (int i = 0; i < N_SAMPLES; i++) mean += signal_input[i];
+    mean /= N_SAMPLES;
+
+    for (int i = 0; i < N_SAMPLES; i++) signal_input[i] -= mean;
+
+    for (int i = 0; i < N_SAMPLES; i++)
+        signal_input[i] *= 0.54f - 0.46f * cosf(2.0f * M_PI * i / (N_SAMPLES - 1));
+
+
+    realft(signal_input, N_SAMPLES, 1);
+
+    // Magnitude
+    for (int k = 1; k < N_SAMPLES/2; k++) {
+        float re = signal_input[2*k];
+        float im = signal_input[2*k + 1];
+        magnitude[k] = sqrtf(re*re + im*im);
+    }
+
+    float scale = 2.0f / N_SAMPLES;
+
+    // Scale bins 1..N/2−1 (MATLAB does the same)
+    for (int k = 1; k < N_SAMPLES/2; k++) {
+        magnitude[k] *= scale;
+    }
+
+    // Peaks
+    int start_bin = 1;   // skips 0–4 (≈0–2 Hz), adjust if needed
+
+    float max1 = 0.0f, max2 = 0.0f;
+    int idx1 = 0, idx2 = 0;
+
+    for (int k = start_bin; k < N_SAMPLES/2; k++)
+    {
+        if (magnitude[k] > max1) {
+            max2 = max1; idx2 = idx1;
+            max1 = magnitude[k]; idx1 = k;
+        }
+        else if (magnitude[k] > max2) {
+            max2 = magnitude[k]; idx2 = k;
+        }
+    }
+
+    float freq1 = ((float)FS / (float)N_SAMPLES) * idx1;
+    float freq2 = ((float)FS / (float)N_SAMPLES) * idx2;
+    char dbg_idx[64];
+    snprintf(dbg_idx, sizeof(dbg_idx),
+             "DEBUG idx1=%d idx2=%d max1=%f max2=%f\r\n",
+             idx1, idx2, max1, max2);
+    send_uart(dbg_idx);
+    snprintf(msg, sizeof(msg),
+        "Peak1: %.1f Hz (%.3f)\r\nPeak2: %.1f Hz (%.3f)\r\n",
+        freq1, max1, freq2, max2
+    );
+    send_uart(msg);
+
+    // Save FFT to SD
+    SD_SaveFFT("fft_output.txt");
+}
+
+
 /* USER CODE END 4 */
 
 /**
