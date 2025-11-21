@@ -18,13 +18,14 @@ void four1(float data[], uint32_t nn, int isign){
 	uint32_t n = nn << 1;
 	uint32_t j = 0;
 	for (uint32_t i = 0; i < n; i += 2){
-		if (j > 1){
-			float tempr = data[j];
-			data[i] = tempr;
-
-			tempr = data[j + 1];
-			data[j + 1] = data[i + 1];
-			data[i + 1] = tempr;
+		if (j > i){
+			float tempr;
+			tempr = data[i];
+			data[i] = data[j];
+			data[j] = tempr;
+			tempr = data[i + 1];
+			data[i + 1] = data[j + 1];
+			data[j + 1] = tempr;
 		}
 		uint32_t m = nn;
 		while (m >= 2 && j >= m){
