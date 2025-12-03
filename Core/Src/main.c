@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "fft.h"
+#include "fft_util.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
@@ -36,10 +37,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define MIC_BUF_LEN 512
-#define N_SAMPLES 2048
-#define FFT_SAMPLES 2048
-#define FS 1000
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -50,24 +48,23 @@
 /* Private variables ---------------------------------------------------------*/
 
 COM_InitTypeDef BspCOMInit;
-I2C_HandleTypeDef hi2c1;
+I2C_HandleTypeDef hi2c2;
+I2C_HandleTypeDef hi2c3;
 
 I2S_HandleTypeDef hi2s2;
 DMA_HandleTypeDef hdma_spi2_rx;
 
 SPI_HandleTypeDef hspi3;
 
+UART_HandleTypeDef huart1;
+
 /* USER CODE BEGIN PV */
 char TxBuffer[250];
 UART_HandleTypeDef huart2;
 int toReceive = 0;
-int32_t micBuffer[MIC_BUF_LEN];
+int16_t micBuffer[MIC_BUF_LEN];
 volatile uint8_t micHalfDataReady = 0;
 volatile uint8_t micFullDataReady = 0;
-uint32_t fft_count = 0;
-float signal_input[N_SAMPLES + 2];
-float magnitude[N_SAMPLES/2];
-static float data[2048 + 2];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -76,16 +73,13 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_I2S2_Init(void);
 static void MX_SPI3_Init(void);
-static void MX_I2C1_Init(void);
+static void MX_I2C2_Init(void);
+static void MX_I2C3_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
-void compute_fft_and_print(void);
-static void SD_LoadFFT_4096(const char *filename);
-static void SD_SaveFFT(const char *filename);
 static void MX_LPUART1_UART_Init(void);
 int _write(int file, char *ptr, int len);
-void send_uart(const char *msg);
-void NR_to_MATLAB_scale(float signal[], float mag[], uint32_t N);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -135,7 +129,9 @@ int main(void)
   if (MX_FATFS_Init() != APP_OK) {
     Error_Handler();
   }
-  MX_I2C1_Init();
+  MX_I2C2_Init();
+  MX_I2C3_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   MX_LPUART1_UART_Init();
   /* USER CODE END 2 */
@@ -160,8 +156,6 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   HAL_I2S_Receive_DMA(&hi2s2, (uint16_t*)micBuffer, MIC_BUF_LEN);
-  //SD_Card_Test();
-  //SD_ReadTextFile("nowey.txt");
   memset(signal_input, 0, sizeof(signal_input));
   fft_count = 0;
   SD_LoadFFT_4096("zniszczoney_v4.txt");
@@ -173,7 +167,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-//	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+	  HAL_Delay(1000);
 //	  if (micHalfDataReady){
 //	  		  micHalfDataReady = 0;
 //	  	      for (int i = 0; i < MIC_BUF_LEN/2; i++)
@@ -234,50 +229,98 @@ void SystemClock_Config(void)
 }
 
 /**
-  * @brief I2C1 Initialization Function
+  * @brief I2C2 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_I2C1_Init(void)
+static void MX_I2C2_Init(void)
 {
 
-  /* USER CODE BEGIN I2C1_Init 0 */
+  /* USER CODE BEGIN I2C2_Init 0 */
 
-  /* USER CODE END I2C1_Init 0 */
+  /* USER CODE END I2C2_Init 0 */
 
-  /* USER CODE BEGIN I2C1_Init 1 */
+  /* USER CODE BEGIN I2C2_Init 1 */
 
-  /* USER CODE END I2C1_Init 1 */
-  hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x40B285C2;
-  hi2c1.Init.OwnAddress1 = 0;
-  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c1.Init.OwnAddress2 = 0;
-  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
-  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.Timing = 0x40B285C2;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
   {
     Error_Handler();
   }
 
   /** Configure Analogue filter
   */
-  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c2, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
   {
     Error_Handler();
   }
 
   /** Configure Digital filter
   */
-  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c2, 0) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN I2C1_Init 2 */
+  /* USER CODE BEGIN I2C2_Init 2 */
 
-  /* USER CODE END I2C1_Init 2 */
+  /* USER CODE END I2C2_Init 2 */
+
+}
+
+/**
+  * @brief I2C3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C3_Init(void)
+{
+
+  /* USER CODE BEGIN I2C3_Init 0 */
+
+  /* USER CODE END I2C3_Init 0 */
+
+  /* USER CODE BEGIN I2C3_Init 1 */
+
+  /* USER CODE END I2C3_Init 1 */
+  hi2c3.Instance = I2C3;
+  hi2c3.Init.Timing = 0x40B285C2;
+  hi2c3.Init.OwnAddress1 = 0;
+  hi2c3.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c3.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c3.Init.OwnAddress2 = 0;
+  hi2c3.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c3.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c3.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c3, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c3, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C3_Init 2 */
+
+  /* USER CODE END I2C3_Init 2 */
 
 }
 
@@ -354,6 +397,54 @@ static void MX_SPI3_Init(void)
 }
 
 /**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -385,18 +476,41 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_9, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(RE_DE_GPIO_Port, RE_DE_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : PC9 */
-  GPIO_InitStruct.Pin = GPIO_PIN_9;
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(SPI3_CS_GPIO_Port, SPI3_CS_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : RE_DE_Pin */
+  GPIO_InitStruct.Pin = RE_DE_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(RE_DE_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : I2C3_INT1_Pin I2C3_INT2_Pin */
+  GPIO_InitStruct.Pin = I2C3_INT1_Pin|I2C3_INT2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : TEMP_SENS_ALERT_Pin */
+  GPIO_InitStruct.Pin = TEMP_SENS_ALERT_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(TEMP_SENS_ALERT_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : SPI3_CS_Pin */
+  GPIO_InitStruct.Pin = SPI3_CS_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(SPI3_CS_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -425,204 +539,6 @@ static void MX_LPUART1_UART_Init(void)
         Error_Handler();
     }
 }
-
-static void SD_LoadFFT_4096(const char *filename)
-{
-	FATFS fs;
-	    FIL fp;
-	    char line[128];
-
-	    fft_count = 0;
-
-	    // Mount card
-	    if (f_mount(&fs, "", 1) != FR_OK) {
-	        send_uart("mount failed\r\n");
-	        return;
-	    }
-
-	    // Open file
-	    if (f_open(&fp, filename, FA_READ) != FR_OK) {
-	        send_uart("open failed\r\n");
-	        return;
-	    }
-
-	    send_uart("Reading FIRST 2048 samples...\r\n");
-
-	    // Read FIRST 2048 rows
-	    while (fft_count < FFT_SAMPLES && f_gets(line, sizeof(line), &fp))
-	    {
-	        // Find comma → keep only first column
-	        char *comma = strchr(line, ',');
-	        if (comma) *comma = '\0';
-
-	        // Convert to float
-	        float value = atof(line);
-	        signal_input[fft_count++] = value;
-
-	        // Debug print each sample
-	        char dbg[64];
-	        snprintf(dbg, sizeof(dbg),
-	                 "sample[%lu] = %f\r\n",
-	                 (unsigned long)(fft_count - 1), value);
-	        send_uart(dbg);
-	    }
-
-	    f_close(&fp);
-	    f_mount(NULL, "", 0);
-
-	    char msg[64];
-	    snprintf(msg, sizeof(msg),
-	             "Loaded %lu samples.\r\n",
-	             (unsigned long)fft_count);
-	    send_uart(msg);
-}
-
-static void SD_SaveFFT(const char *filename)
-{
-    FATFS FatFs;
-    FIL fil;
-    FRESULT res;
-    UINT written;
-    char buf[64];
-    send_uart("Entering SD_SaveFFT...\r\n");
-
-    if (disk_initialize(0) != 0) {
-    	send_uart("disk init failed!\r\n");
-        return;
-    }
-
-    if (f_mount(&FatFs, "", 1) != FR_OK) {
-    	send_uart("mount failed!\r\n");
-        return;
-    }
-
-    res = f_open(&fil, filename, FA_WRITE | FA_CREATE_ALWAYS);
-    if (res != FR_OK) {
-    	send_uart("open failed (%d)\r\n");
-        return;
-    }
-
-    for (int k = 0; k < N_SAMPLES/2; k++) {
-        float freq = (FS / (float)N_SAMPLES) * k;
-        snprintf(buf, sizeof(buf), "%.4f, %.6f\r\n", freq, magnitude[k]);
-        f_write(&fil, buf, strlen(buf), &written);
-    }
-
-    f_close(&fil);
-    f_mount(NULL, "", 0);
-
-    printf("FFT saved to %s\r\n", filename);
-}
-
-void compute_magnitude(float signal[], float mag[], uint32_t N)
-{
-	float scale = 1.0f / (float)N;
-
-	    // DC bin (k = 0), no factor 2
-	    mag[0] = fabsf(signal[0]) * scale;
-
-	    // Bins 1 .. N/2 - 1 : multiply by 2 for single-sided spectrum
-	    for (uint32_t k = 1; k < N/2; k++)
-	    {
-	        float re = signal[2*k];
-	        float im = signal[2*k + 1];
-	        float m = sqrtf(re*re + im*im);
-	        mag[k] = 2.0f * m * scale;
-	    }
-
-}
-
-static void SD_SaveFullFFT(const char *filename, float *data, uint32_t N)
-{
-    FATFS FatFs;
-    FIL fil;
-    FRESULT res;
-    UINT written;
-    char buf[48];
-
-    send_uart("Saving full FFT array...\r\n");
-
-    if (disk_initialize(0) != 0) {
-        send_uart("disk init failed!\r\n");
-        return;
-    }
-
-    if (f_mount(&FatFs, "", 1) != FR_OK) {
-        send_uart("mount failed!\r\n");
-        return;
-    }
-
-    res = f_open(&fil, filename, FA_CREATE_ALWAYS | FA_WRITE);
-    if (res != FR_OK) {
-        send_uart("open failed!\r\n");
-        return;
-    }
-
-    for (uint32_t i = 0; i < N + 2; i++)
-    {
-        // save index and value
-        int len = snprintf(buf, sizeof(buf), "%lu, %.7f\r\n",
-                           (unsigned long)i, signal_input[i]);
-        f_write(&fil, buf, len, &written);
-    }
-
-    f_close(&fil);
-    f_mount(NULL, "", 0);
-
-    send_uart("Full FFT array saved.\r\n");
-}
-
-void compute_fft_and_print(void)
-{
-    char msg[128];
-
-//    for (int i = 0; i < N_SAMPLES; i++)
-//        data[i+1] = signal_input[i];
-
-    realft(signal_input, N_SAMPLES, 1);
-    for (int k = 1; k < N_SAMPLES/2; k++) {
-        float re = signal_input[2*k];
-        float im = signal_input[2*k + 1];
-        magnitude[k] = sqrtf(re*re + im*im);
-    }
-
-    // Peaks
-    int start_bin = 1;   // skips 0–4 (≈0–2 Hz), adjust if needed
-
-    float max1 = 0.0f, max2 = 0.0f;
-    int idx1 = 0, idx2 = 0;
-
-    for (int k = start_bin; k < N_SAMPLES/2; k++)
-    {
-        if (magnitude[k] > max1) {
-            max2 = max1; idx2 = idx1;
-            max1 = magnitude[k]; idx1 = k;
-        }
-        else if (magnitude[k] > max2) {
-            max2 = magnitude[k]; idx2 = k;
-        }
-    }
-    // Normalize so the largest peak = 1
-    if (max1 > 0.0f) {
-        for (int k = 0; k < N_SAMPLES/2; k++) {
-            magnitude[k] /= max1;
-        }
-    }
-
-    float freq1 = ((float)FS / (float)N_SAMPLES) * idx1;
-    float freq2 = ((float)FS / (float)N_SAMPLES) * idx2;
-
-    snprintf(msg, sizeof(msg),
-        "Peak1: %.1f Hz (%.3f)\r\nPeak2: %.1f Hz (%.3f)\r\n",
-        freq1, max1/max1, freq2, max2/max1
-    );
-    send_uart(msg);
-
-    // Save FFT to SD
-    SD_SaveFFT("fft_output_3.txt");
-    SD_SaveFullFFT("fft_full_raw.txt", signal_input, N_SAMPLES);
-}
-
 
 /* USER CODE END 4 */
 
