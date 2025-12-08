@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "fft.h"
 #include "fft_util.h"
+#include "LSM6DS3.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
@@ -47,7 +48,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 
-COM_InitTypeDef BspCOMInit;
+//COM_InitTypeDef BspCOMInit;
 I2C_HandleTypeDef hi2c2;
 I2C_HandleTypeDef hi2c3;
 
@@ -56,15 +57,16 @@ DMA_HandleTypeDef hdma_spi2_rx;
 
 SPI_HandleTypeDef hspi3;
 
-UART_HandleTypeDef huart1;
-
 /* USER CODE BEGIN PV */
 char TxBuffer[250];
-UART_HandleTypeDef huart2;
+//UART_HandleTypeDef huart2;
 int toReceive = 0;
 int16_t micBuffer[MIC_BUF_LEN];
 volatile uint8_t micHalfDataReady = 0;
 volatile uint8_t micFullDataReady = 0;
+
+float axl_odr = 6666.0f;
+float axl_full_scale = 4.0f;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -75,23 +77,22 @@ static void MX_I2S2_Init(void);
 static void MX_SPI3_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_I2C3_Init(void);
-static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
-static void MX_LPUART1_UART_Init(void);
-int _write(int file, char *ptr, int len);
+//static void MX_LPUART1_UART_Init(void);
+//int _write(int file, char *ptr, int len);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int _write(int file, char *ptr, int len) {
-    HAL_UART_Transmit(&huart2, (uint8_t*)ptr, len, HAL_MAX_DELAY);
-    return len;
-}
-void send_uart(const char *msg)
-{
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
-}
+//int _write(int file, char *ptr, int len) {
+//    HAL_UART_Transmit(&huart2, (uint8_t*)ptr, len, HAL_MAX_DELAY);
+//    return len;
+//}
+//void send_uart(const char *msg)
+//{
+//    HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+//}
 /* USER CODE END 0 */
 
 /**
@@ -131,31 +132,61 @@ int main(void)
   }
   MX_I2C2_Init();
   MX_I2C3_Init();
-  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  MX_LPUART1_UART_Init();
+//  MX_LPUART1_UART_Init();
   /* USER CODE END 2 */
 
   /* Initialize leds */
-  BSP_LED_Init(LED_GREEN);
+//  BSP_LED_Init(LED_GREEN);
 
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
 
   /* Initialize COM1 port (115200, 8 bits (7-bit data + 1 stop bit), no parity */
-  BspCOMInit.BaudRate   = 115200;
-  BspCOMInit.WordLength = COM_WORDLENGTH_8B;
-  BspCOMInit.StopBits   = COM_STOPBITS_1;
-  BspCOMInit.Parity     = COM_PARITY_NONE;
-  BspCOMInit.HwFlowCtl  = COM_HWCONTROL_NONE;
-  if (BSP_COM_Init(COM1, &BspCOMInit) != BSP_ERROR_NONE)
-  {
-    Error_Handler();
-  }
+//  BspCOMInit.BaudRate   = 115200;
+//  BspCOMInit.WordLength = COM_WORDLENGTH_8B;
+//  BspCOMInit.StopBits   = COM_STOPBITS_1;
+//  BspCOMInit.Parity     = COM_PARITY_NONE;
+//  BspCOMInit.HwFlowCtl  = COM_HWCONTROL_NONE;
+//  if (BSP_COM_Init(COM1, &BspCOMInit) != BSP_ERROR_NONE)
+//  {
+//    Error_Handler();
+//  }
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  //initialize dma for microphone
   HAL_I2S_Receive_DMA(&hi2s2, (uint16_t*)micBuffer, MIC_BUF_LEN);
+  if (HAL_I2C_Init(&hi2c3) != HAL_OK){
+	  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
+	  		  	  HAL_Delay(2000);
+  }
+
+  //setup axl
+//  if (HAL_I2C_IsDeviceReady(&hi2c3, 0x6B<<1, 3, 100) == HAL_OK){
+//	  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
+//	  HAL_Delay(2000);
+//  }
+  for (uint16_t addr = 1; addr < 127; addr++){
+	  uint16_t devAddr = addr << 1;
+	  if (HAL_I2C_IsDeviceReady(&hi2c3, devAddr, 2, 10) == HAL_OK){
+		  	  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
+		  	  HAL_Delay(2000);
+	  }
+  }
+  LSM6DS3_initialize(hi2c3, axl_odr, axl_full_scale);
+//  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
+//  HAL_Delay(2000);
+//  if (status != 0) {
+//	  Error_Handler();
+//  }
+  //check if the device really is LSM6DS3
+  int whoami = LSM6DS3_check_who_am_i(hi2c3);
+//  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
+//  if (whoami != LSM6DS3_WHO_AM_I){
+//	  Error_Handler();
+//  }
+  //calculate fft based on sd card data
   memset(signal_input, 0, sizeof(signal_input));
   fft_count = 0;
   SD_LoadFFT_4096("zniszczoney_v4.txt");
@@ -167,16 +198,17 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
 	  HAL_Delay(1000);
-//	  if (micHalfDataReady){
-//	  		  micHalfDataReady = 0;
-//	  	      for (int i = 0; i < MIC_BUF_LEN/2; i++)
-//	  	      {
-//	  	    	printf("%ld ", micBuffer[i]);
-//	  	      }
-//	  	      printf("\r\n");
-//	  	  }
+	  if (micHalfDataReady){
+		  micHalfDataReady = 0;
+		  HAL_GPIO_TogglePin(GPIOC, USR_LED2_Pin);
+	  }
+	  if (LSM6DS3_data_ready(hi2c3)){
+		  LSM6DS3_AccelData acc = LSM6DS3_read_acceleration(hi2c3, axl_full_scale);
+		  if (acc.status == 1){
+			  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
+		  }
+	  }
 
   }
   /* USER CODE END 3 */
@@ -397,54 +429,6 @@ static void MX_SPI3_Init(void)
 }
 
 /**
-  * @brief USART1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART1_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART1_Init 0 */
-
-  /* USER CODE END USART1_Init 0 */
-
-  /* USER CODE BEGIN USART1_Init 1 */
-
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART1_Init 2 */
-
-  /* USER CODE END USART1_Init 2 */
-
-}
-
-/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -481,10 +465,20 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, USR_LED1_Pin|USR_LED2_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(RE_DE_GPIO_Port, RE_DE_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(SPI3_CS_GPIO_Port, SPI3_CS_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : USR_LED1_Pin USR_LED2_Pin */
+  GPIO_InitStruct.Pin = USR_LED1_Pin|USR_LED2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : RE_DE_Pin */
   GPIO_InitStruct.Pin = RE_DE_Pin;
@@ -521,24 +515,24 @@ static void MX_GPIO_Init(void)
 void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s){
 	micHalfDataReady = 1;
 }
-static void MX_LPUART1_UART_Init(void)
-{
-    huart2.Instance = LPUART1;
-    huart2.Init.BaudRate = 115200;
-    huart2.Init.WordLength = UART_WORDLENGTH_8B;
-    huart2.Init.StopBits = UART_STOPBITS_1;
-    huart2.Init.Parity = UART_PARITY_NONE;
-    huart2.Init.Mode = UART_MODE_TX_RX;
-    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-    huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-    huart2.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-    huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-
-    if (HAL_UART_Init(&huart2) != HAL_OK) {
-        Error_Handler();
-    }
-}
+//static void MX_LPUART1_UART_Init(void)
+//{
+//    huart2.Instance = LPUART1;
+//    huart2.Init.BaudRate = 115200;
+//    huart2.Init.WordLength = UART_WORDLENGTH_8B;
+//    huart2.Init.StopBits = UART_STOPBITS_1;
+//    huart2.Init.Parity = UART_PARITY_NONE;
+//    huart2.Init.Mode = UART_MODE_TX_RX;
+//    huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+//    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+//    huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+//    huart2.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+//    huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+//
+//    if (HAL_UART_Init(&huart2) != HAL_OK) {
+//        Error_Handler();
+//    }
+//}
 
 /* USER CODE END 4 */
 
