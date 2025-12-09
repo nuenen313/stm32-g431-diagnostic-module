@@ -59,7 +59,6 @@ SPI_HandleTypeDef hspi3;
 
 /* USER CODE BEGIN PV */
 char TxBuffer[250];
-//UART_HandleTypeDef huart2;
 int toReceive = 0;
 int16_t micBuffer[MIC_BUF_LEN];
 volatile uint8_t micHalfDataReady = 0;
@@ -133,25 +132,13 @@ int main(void)
   MX_I2C2_Init();
   MX_I2C3_Init();
   /* USER CODE BEGIN 2 */
-//  MX_LPUART1_UART_Init();
+  uint32_t sample_idx = 0;
   /* USER CODE END 2 */
 
   /* Initialize leds */
-//  BSP_LED_Init(LED_GREEN);
 
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
-
-  /* Initialize COM1 port (115200, 8 bits (7-bit data + 1 stop bit), no parity */
-//  BspCOMInit.BaudRate   = 115200;
-//  BspCOMInit.WordLength = COM_WORDLENGTH_8B;
-//  BspCOMInit.StopBits   = COM_STOPBITS_1;
-//  BspCOMInit.Parity     = COM_PARITY_NONE;
-//  BspCOMInit.HwFlowCtl  = COM_HWCONTROL_NONE;
-//  if (BSP_COM_Init(COM1, &BspCOMInit) != BSP_ERROR_NONE)
-//  {
-//    Error_Handler();
-//  }
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -159,7 +146,7 @@ int main(void)
   HAL_I2S_Receive_DMA(&hi2s2, (uint16_t*)micBuffer, MIC_BUF_LEN);
   if (HAL_I2C_Init(&hi2c3) != HAL_OK){
 	  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
-	  		  	  HAL_Delay(2000);
+	  HAL_Delay(2000);
   }
 
   //setup axl
@@ -171,9 +158,37 @@ int main(void)
 	  Error_Handler();
   }
   //calculate fft based on sd card data
+//  memset(signal_input, 0, sizeof(signal_input));
+//  fft_count = 0;
+//  SD_LoadFFT_4096("zniszczoney_v4.txt");
+//  compute_fft_and_print();
+  HAL_GPIO_WritePin(GPIOC, USR_LED2_Pin, GPIO_PIN_SET); // LED on during collection
   memset(signal_input, 0, sizeof(signal_input));
   fft_count = 0;
-  SD_LoadFFT_4096("zniszczoney_v4.txt");
+
+  while (fft_count < N_SAMPLES) {
+      if (LSM6DS3_data_ready(hi2c3)) {
+          LSM6DS3_AccelData acc = LSM6DS3_read_acceleration(hi2c3, axl_full_scale);
+
+          if (acc.status == 1) {
+              // Store the magnitude of acceleration (or choose x, y, or z axis)
+              // Option 1: Use y axis
+              signal_input[fft_count] = acc.y;
+
+              fft_count++;
+              HAL_GPIO_TogglePin(GPIOC, USR_LED2_Pin); // Visual feedback during sampling
+              //HAL_Delay(500);
+          }
+      }
+  }
+  HAL_GPIO_WritePin(GPIOC, USR_LED1_Pin, GPIO_PIN_RESET); // LED off after collection
+  HAL_GPIO_WritePin(GPIOC, USR_LED2_Pin, GPIO_PIN_RESET);   // LED2 steady on
+
+  // ===== STEP 2: Copy data to signal_input and compute FFT =====
+
+  // Copy accelerometer data to FFT input buffer
+
+  // Compute and save FFT
   compute_fft_and_print();
 
   while (1)
