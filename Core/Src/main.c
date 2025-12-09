@@ -163,29 +163,13 @@ int main(void)
   }
 
   //setup axl
-//  if (HAL_I2C_IsDeviceReady(&hi2c3, 0x6B<<1, 3, 100) == HAL_OK){
-//	  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
-//	  HAL_Delay(2000);
-//  }
-  for (uint16_t addr = 1; addr < 127; addr++){
-	  uint16_t devAddr = addr << 1;
-	  if (HAL_I2C_IsDeviceReady(&hi2c3, devAddr, 2, 10) == HAL_OK){
-		  	  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
-		  	  HAL_Delay(2000);
-	  }
-  }
   LSM6DS3_initialize(hi2c3, axl_odr, axl_full_scale);
-//  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
-//  HAL_Delay(2000);
-//  if (status != 0) {
-//	  Error_Handler();
-//  }
   //check if the device really is LSM6DS3
   int whoami = LSM6DS3_check_who_am_i(hi2c3);
-//  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
-//  if (whoami != LSM6DS3_WHO_AM_I){
-//	  Error_Handler();
-//  }
+  HAL_GPIO_TogglePin(GPIOC, USR_LED1_Pin);
+  if (whoami != LSM6DS3_WHO_AM_I){
+	  Error_Handler();
+  }
   //calculate fft based on sd card data
   memset(signal_input, 0, sizeof(signal_input));
   fft_count = 0;

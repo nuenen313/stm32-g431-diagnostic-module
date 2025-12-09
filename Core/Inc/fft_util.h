@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 #define MIC_BUF_LEN 256
-#define N_SAMPLES 2048
+#define N_SAMPLES 4096
 #define FS 1000.0f
 
 extern float signal_input[N_SAMPLES + 2];

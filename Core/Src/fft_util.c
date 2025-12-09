@@ -30,39 +30,17 @@ void SD_LoadFFT_4096(const char *filename)
     fft_count = 0;
 
     stat = disk_initialize(0);
-    char msg2[64];
-    snprintf(msg2, sizeof(msg2), "disk_initialize returned: %d\r\n", stat);
-//    send_uart(msg2);
-
     if (stat != 0) {
-//        send_uart("Disk init failed! Check connections.\r\n");
         return;
     }
 
     HAL_Delay(100);
 
-    res = f_mount(&fs, "", 1);
-    snprintf(msg2, sizeof(msg2), "f_mount returned: %d\r\n", res);
-//    send_uart(msg2);
-
-//    if (res != FR_OK) {
-//        if (res == FR_NO_FILESYSTEM) send_uart("No FAT32 filesystem\r\n");
-//        else if (res == FR_DISK_ERR) send_uart("Disk error\r\n");
-//        else if (res == FR_NOT_READY) send_uart("Disk not ready\r\n");
-//        else send_uart("Mount failed\r\n");
-//        return;
-//    }
-
     res = f_open(&fp, filename, FA_READ);
     if (res != FR_OK) {
-        snprintf(msg2, sizeof(msg2), "f_open failed: %d\r\n", res);
-//        send_uart(msg2);
-//        if (res == FR_NO_FILE) send_uart("File not found\r\n");
         f_mount(NULL, "", 0);
         return;
     }
-
-//    send_uart("File opened successfully!\r\n");
 
     while (fft_count < N_SAMPLES && f_gets(line, sizeof(line), &fp))
     {
@@ -76,15 +54,10 @@ void SD_LoadFFT_4096(const char *filename)
         snprintf(dbg, sizeof(dbg),
                  "sample[%lu] = %f\r\n",
                  (unsigned long)(fft_count - 1), value);
-//        send_uart(dbg);
     }
 
     f_close(&fp);
     f_mount(NULL, "", 0);
-
-    char msg[64];
-    snprintf(msg, sizeof(msg), "Loaded %lu samples.\r\n", (unsigned long)fft_count);
-//    send_uart(msg);
 }
 
 /* --------------------------------------------------------------------------
@@ -98,21 +71,16 @@ void SD_SaveFFT(const char *filename, float max_val)
     UINT written;
     char buf[64];
 
-//    send_uart("Saving FFT...\r\n");
-
     if (disk_initialize(0) != 0) {
-//        send_uart("disk init failed!\r\n");
         return;
     }
 
     if (f_mount(&FatFs, "", 1) != FR_OK) {
-//        send_uart("mount failed!\r\n");
         return;
     }
 
     res = f_open(&fil, filename, FA_WRITE | FA_CREATE_ALWAYS);
     if (res != FR_OK) {
-//        send_uart("open failed!\r\n");
         return;
     }
 
@@ -131,8 +99,6 @@ void SD_SaveFFT(const char *filename, float max_val)
 
     f_close(&fil);
     f_mount(NULL, "", 0);
-
-//    send_uart("FFT saved.\r\n");
 }
 
 /* --------------------------------------------------------------------------
@@ -146,21 +112,16 @@ void SD_SaveFullFFT(const char *filename, float *data, uint32_t N)
     UINT written;
     char buf[48];
 
-//    send_uart("Saving full FFT...\r\n");
-
     if (disk_initialize(0) != 0) {
-//        send_uart("disk init failed!\r\n");
         return;
     }
 
     if (f_mount(&FatFs, "", 1) != FR_OK) {
-//        send_uart("mount failed!\r\n");
         return;
     }
 
     res = f_open(&fil, filename, FA_CREATE_ALWAYS | FA_WRITE);
     if (res != FR_OK) {
-//        send_uart("open failed!\r\n");
         return;
     }
 
@@ -173,8 +134,6 @@ void SD_SaveFullFFT(const char *filename, float *data, uint32_t N)
 
     f_close(&fil);
     f_mount(NULL, "", 0);
-
-//    send_uart("Full FFT saved.\r\n");
 }
 
 /* --------------------------------------------------------------------------
@@ -182,12 +141,11 @@ void SD_SaveFullFFT(const char *filename, float *data, uint32_t N)
  * --------------------------------------------------------------------------*/
 void compute_fft_and_print(void)
 {
-//    char msg[128];
 
     realft(signal_input, N_SAMPLES, 1);
 
     float max1 = 0, max2 = 0;
-//    int idx1 = 0, idx2 = 0;
+    int idx1 = 0, idx2 = 0;
 
     for (int k = 1; k < N_SAMPLES/2; k++)
     {
@@ -203,14 +161,6 @@ void compute_fft_and_print(void)
         }
     }
 
-//    float freq1 = (FS / (float)N_SAMPLES) * idx1;
-//    float freq2 = (FS / (float)N_SAMPLES) * idx2;
-
-//    snprintf(msg, sizeof(msg),
-//             "Peak1: %.1f Hz (%.3f)\r\nPeak2: %.1f Hz (%.3f)\r\n",
-//             freq1, max1, freq2, max2);
-//    send_uart(msg);
-
-    SD_SaveFFT("fft_output_08_12_01.txt", max1);
-    SD_SaveFullFFT("fft_raw_08_12_01.txt", signal_input, N_SAMPLES);
+    SD_SaveFFT("fft_output_09_12_01.txt", max1);
+    SD_SaveFullFFT("fft_raw_09_12_01.txt", signal_input, N_SAMPLES);
 }
