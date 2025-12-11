@@ -12,7 +12,7 @@
 
 #define MIC_BUF_LEN 256
 #define N_SAMPLES 4096
-#define FS 1000.0f
+#define FS 6660.0f
 
 extern float signal_input[N_SAMPLES + 2];
 extern uint32_t fft_count;

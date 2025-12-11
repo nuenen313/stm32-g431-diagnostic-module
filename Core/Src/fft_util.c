@@ -49,11 +49,6 @@ void SD_LoadFFT_4096(const char *filename)
 
         float value = atof(line);
         signal_input[fft_count++] = value;
-
-        char dbg[64];
-        snprintf(dbg, sizeof(dbg),
-                 "sample[%lu] = %f\r\n",
-                 (unsigned long)(fft_count - 1), value);
     }
 
     f_close(&fp);
@@ -161,6 +156,6 @@ void compute_fft_and_print(void)
         }
     }
 
-    SD_SaveFFT("fft_output_09_12_01.txt", max1);
-    SD_SaveFullFFT("fft_raw_09_12_01.txt", signal_input, N_SAMPLES);
+    SD_SaveFFT("fft_output_lsm6ds3.txt", max1);
+    SD_SaveFullFFT("fft_raw_lsm6ds3.txt", signal_input, N_SAMPLES);
 }
