@@ -132,7 +132,7 @@ int main(void)
   MX_I2C2_Init();
   MX_I2C3_Init();
   /* USER CODE BEGIN 2 */
-  uint32_t sample_idx = 0;
+//  uint32_t sample_idx = 0;
   /* USER CODE END 2 */
 
   /* Initialize leds */
@@ -166,21 +166,62 @@ int main(void)
   memset(signal_input, 0, sizeof(signal_input));
   fft_count = 0;
 
-  while (fft_count < N_SAMPLES) {
-      if (LSM6DS3_data_ready(hi2c3)) {
-          LSM6DS3_AccelData acc = LSM6DS3_read_acceleration(hi2c3, axl_full_scale);
+    while (fft_count < N_SAMPLES) {
+        if (LSM6DS3_data_ready(hi2c3)) {
+            LSM6DS3_AccelData acc = LSM6DS3_read_acceleration(hi2c3, axl_full_scale);
+            if (acc.status == 1) {
+                signal_input[fft_count] = acc.x;
+                fft_count++;
+            }
+        }
+    }
+    SD_SaveSignal("accel_x_1.csv", signal_input, N_SAMPLES);
+    memset(signal_input, 0, sizeof(signal_input));
+    fft_count = 0;
 
-          if (acc.status == 1) {
-              // Store the magnitude of acceleration (or choose x, y, or z axis)
-              // Option 1: Use y axis
-              signal_input[fft_count] = acc.y;
+    while (fft_count < N_SAMPLES) {
+        if (LSM6DS3_data_ready(hi2c3)) {
+            LSM6DS3_AccelData acc =
+                LSM6DS3_read_acceleration(hi2c3, axl_full_scale);
 
-              fft_count++;
-              HAL_GPIO_TogglePin(GPIOC, USR_LED2_Pin); // Visual feedback during sampling
-              //HAL_Delay(500);
-          }
-      }
-  }
+            if (acc.status == 1) {
+                signal_input[fft_count] = acc.y;
+                fft_count++;
+            }
+        }
+    }
+
+    SD_SaveSignal("accel_y_1.csv", signal_input, N_SAMPLES);
+
+    memset(signal_input, 0, sizeof(signal_input));
+    fft_count = 0;
+
+    while (fft_count < N_SAMPLES) {
+        if (LSM6DS3_data_ready(hi2c3)) {
+            LSM6DS3_AccelData acc =
+                LSM6DS3_read_acceleration(hi2c3, axl_full_scale);
+
+            if (acc.status == 1) {
+                signal_input[fft_count] = acc.z;
+                fft_count++;
+            }
+        }
+    }
+
+    SD_SaveSignal("accel_z_1.csv", signal_input, N_SAMPLES);
+    compute_fft_and_print("fft_14_12_2025_1.txt", "fft_raw_14_12_2025_1.txt");
+    while (!micHalfDataReady){
+
+    }
+    SD_SaveMicBuffer("mic_14_12_2025_1.txt", micBuffer, MIC_BUF_LEN);
+    micHalfDataReady = 0;
+    while (!micHalfDataReady){
+
+        }
+    SD_SaveMicBuffer("mic_14_12_2025_2.txt", micBuffer, MIC_BUF_LEN);
+    micHalfDataReady = 0;
+
+
   HAL_GPIO_WritePin(GPIOC, USR_LED1_Pin, GPIO_PIN_RESET); // LED off after collection
   HAL_GPIO_WritePin(GPIOC, USR_LED2_Pin, GPIO_PIN_RESET);   // LED2 steady on
 
@@ -189,7 +230,7 @@ int main(void)
   // Copy accelerometer data to FFT input buffer
 
   // Compute and save FFT
-  compute_fft_and_print();
+//  compute_fft_and_print();
 
   while (1)
   {

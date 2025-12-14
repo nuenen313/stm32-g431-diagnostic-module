@@ -134,7 +134,7 @@ void SD_SaveFullFFT(const char *filename, float *data, uint32_t N)
 /* --------------------------------------------------------------------------
  * FFT + peak detection + saving
  * --------------------------------------------------------------------------*/
-void compute_fft_and_print(void)
+void compute_fft_and_print(const char *output_filename, const char *raw_filename)
 {
 
     realft(signal_input, N_SAMPLES, 1);
@@ -156,6 +156,76 @@ void compute_fft_and_print(void)
         }
     }
 
-    SD_SaveFFT("fft_output_lsm6ds3.txt", max1);
-    SD_SaveFullFFT("fft_raw_lsm6ds3.txt", signal_input, N_SAMPLES);
+    SD_SaveFFT(output_filename, max1);
+    SD_SaveFullFFT(raw_filename, signal_input, N_SAMPLES);
 }
+
+void SD_SaveMicBuffer(const char *filename, int16_t *mic_data, uint32_t num_samples)
+{
+    FATFS FatFs;
+    FIL fil;
+    FRESULT res;
+    UINT written;
+    char buf[32];
+
+    if (disk_initialize(0) != 0) {
+        return;
+    }
+
+    if (f_mount(&FatFs, "", 1) != FR_OK) {
+        return;
+    }
+
+    res = f_open(&fil, filename, FA_CREATE_ALWAYS | FA_WRITE);
+    if (res != FR_OK) {
+        f_mount(NULL, "", 0);
+        return;
+    }
+
+    // Write header (optional)
+    snprintf(buf, sizeof(buf), "Sample, Value\r\n");
+    f_write(&fil, buf, strlen(buf), &written);
+
+    // Write microphone samples
+    for (uint32_t i = 0, n = 0; i < num_samples; i += 2, n++) {
+        int16_t s = mic_data[i];
+        int len = snprintf(buf, sizeof(buf), "%lu,%d\r\n",
+                           (unsigned long)n, (int)s);
+        f_write(&fil, buf, len, &written);
+    }
+
+    f_close(&fil);
+    f_mount(NULL, "", 0);
+}
+
+void SD_SaveSignal(const char *filename, float *data, uint32_t n)
+{
+    FATFS fs;
+    FIL fil;
+    FRESULT res;
+    UINT written;
+    char buf[48];
+
+    if (disk_initialize(0) != 0) return;
+    if (f_mount(&fs, "", 1) != FR_OK) return;
+
+    res = f_open(&fil, filename, FA_CREATE_ALWAYS | FA_WRITE);
+    if (res != FR_OK) {
+        f_mount(NULL, "", 0);
+        return;
+    }
+
+    f_write(&fil, "sample,value\r\n", 15, &written);
+
+    for (uint32_t i = 0; i < n; i++) {
+        int len = snprintf(buf, sizeof(buf),
+                           "%lu,%.6f\r\n",
+                           (unsigned long)i,
+                           data[i]);
+        f_write(&fil, buf, len, &written);
+    }
+
+    f_close(&fil);
+    f_mount(NULL, "", 0);
+}
+
